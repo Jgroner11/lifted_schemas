@@ -180,7 +180,7 @@ class CHMM(object):
         )
         states = backtrace(self.T, self.n_clones, x, a, mess_fwd)
         return -log2_lik, states
-    
+
     def jacob_decode(self, x, a):
         """Compute the MAP assignment of latent variables using max-product message passing."""
         log2_lik, mess_fwd = forward_mp(
@@ -455,6 +455,69 @@ def updateC(C, T, n_clones, mess_fwd, mess_bwd, x, a):
         )
         q /= q.sum()
         C[aij, i_start:i_stop, j_start:j_stop] += q
+
+
+def forward_distribution(T_tr, Pi, n_clones, x, a, store_messages=False):
+    ### before x was just (seq_len, )
+    ### Now x is going to be (seq_len, |O| ) distribution
+    ### |O| = n_emissions
+
+    """Log-probability of a sequence, and optionally, messages"""
+    state_loc = np.hstack((np.array([0], dtype=n_clones.dtype), n_clones)).cumsum()
+    dtype = T_tr.dtype.type
+
+    # forward pass
+    ## calculate the probability of observing the first observation at time 0
+    t, log2_lik = 0, np.zeros(len(x), dtype)
+    ### now this is a distribution of shape (|O|, )
+    j = x[t]
+    ###
+    # j_start, j_stop = state_loc[j : j + 2]
+    j_start = state_loc[j]
+    j_stop = state_loc[j+1]
+    assert np.all(j_stop - j_start == j_stop[0] - j_start[0]), 'assuming uniform length'
+    length = len(j)
+    ixs = j_start[:, None] + np.arange(length)
+    message = Pi[ixs].copy().astype(dtype)
+    p_obs = message.sum(axis=0)  # p_obs is now of shape (|O|, )
+    overall_pobs = p_obs.sum()
+
+    message = Pi[j_start:j_stop].copy().astype(dtype)
+    p_obs = message.sum()
+    assert p_obs > 0
+    message /= p_obs
+    log2_lik[0] = np.log2(p_obs)
+    if store_messages:
+        mess_loc = np.hstack(
+            (np.array([0], dtype=n_clones.dtype), n_clones[x])
+        ).cumsum()
+        mess_fwd = np.empty(mess_loc[-1], dtype=dtype)
+        t_start, t_stop = mess_loc[t : t + 2]
+        mess_fwd[t_start:t_stop] = message
+    else:
+        mess_fwd = None
+
+    for t in range(1, x.shape[0]):
+        aij, i, j = (
+            a[t - 1],
+            x[t - 1],
+            x[t],
+        )  # at time t-1 -> t we go from observation i to observation j
+        (i_start, i_stop), (j_start, j_stop) = (
+            state_loc[i : i + 2],
+            state_loc[j : j + 2],
+        )
+        message = np.ascontiguousarray(T_tr[aij, j_start:j_stop, i_start:i_stop]).dot(
+            message
+        )
+        p_obs = message.sum()
+        assert p_obs > 0
+        message /= p_obs
+        log2_lik[t] = np.log2(p_obs)
+        if store_messages:
+            t_start, t_stop = mess_loc[t : t + 2]
+            mess_fwd[t_start:t_stop] = message
+    return log2_lik, mess_fwd
 
 
 # @nb.njit

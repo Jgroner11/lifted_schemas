@@ -14,9 +14,9 @@ class NeuralNetwork(nn.Module):
 
     def forward(self, x):
         logits = self.fc(x)  # Compute logits
-        probabilities = self.softmax(logits * 10)  # Apply a very hard softmax 
+        probabilities = self.softmax(logits * 10)  # Apply a very hard softmax
         return probabilities
-    
+
 # Cost Function (directly on logits)
 def all_one_cost(v_pred_logits, o):
     # Calculate cost to force the network to output "4" (in continuous logits space)
@@ -62,7 +62,7 @@ def distinguish_reward_cost(v_pred_logits, D, b):
 
     return   (v_pred_logits * (t * (2*D[:, -1]-1).view(-1, 1))) @ ones_k @ ones_m
 
-    
+
 def uniquely_distinguish_cost(v_pred_logits, D, b, relativity=1):
     m, k = v_pred_logits.shape
 
@@ -85,6 +85,7 @@ def uniquely_distinguish_cost(v_pred_logits, D, b, relativity=1):
 def prob_cost(v_pred_logits, chmm, a):
     x = torch.argmax(model(D_tensor), dim=1)
     x = np.array(x, dtype=np.int64)
+    # returns negative log likelihood of single sequence
     cost = chmm.bps(x, a)
     return sum(cost)
 
